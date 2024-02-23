@@ -72,8 +72,9 @@ func generateNgrams(db *sql.DB) error {
 		return fmt.Errorf("loading existing stats: %w", err)
 	}
 	fmt.Printf("Loaded %d ngrams\n", len(stat.ngrams))
-	for i, fname := range flag.Args() {
-		fmt.Printf("Processing file %d/%d\r", i, len(flag.Args()))
+	files := getFilesToRead()
+	for i, fname := range files {
+		fmt.Printf("Processing file %d/%d\r", i, len(files))
 		f, err := os.Open(fname)
 		if err != nil {
 			log.Panic("opening file:", err)
@@ -104,4 +105,16 @@ func generateText(db *sql.DB, length int) (string, error) {
 		return "", fmt.Errorf("loading statistics: %w", err)
 	}
 	return stat.generate(length), nil
+}
+
+func getFilesToRead() []string {
+	if len(flag.Args()) > 0 {
+		return flag.Args()
+	}
+	files := make([]string, 0, 10)
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		files = append(files, scanner.Text())
+	}
+	return files
 }
