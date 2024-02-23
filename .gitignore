@@ -12,3 +12,4 @@ book_processed
 .*
 *.db
 __debug_bin
+*.code-workspace
