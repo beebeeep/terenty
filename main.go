@@ -2,26 +2,76 @@ package main
 
 import (
 	"bufio"
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"unicode/utf8"
+
+	_ "github.com/mattn/go-sqlite3"
+)
+
+const (
+	_ngramTableSQL = `CREATE TABLE IF NOT EXISTS ngrams(
+		ngram text,
+		nextNgram text,
+		weight integer,
+		PRIMARY KEY (ngram, nextNgram))`
 )
 
 var (
 	textLength  = flag.Int("l", 1000, "length of text to generate")
 	ngramLength = flag.Int("n", 3, "ngram length")
+	dbFile      = flag.String("db", "ngrams.db", "DB file")
+	mode        = flag.String("m", "text", "mode (text, read)")
 )
 
 func main() {
 	flag.Parse()
+	switch *mode {
+	case "read":
+		db, err := initDb()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := generateNgrams(db); err != nil {
+			log.Fatal(err)
+		}
+	case "text":
+		db, err := initDb()
+		if err != nil {
+			log.Fatal(err)
+		}
+		text, err := generateText(db, *textLength)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(text)
+	}
+}
+
+func initDb() (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", *dbFile)
+	if err != nil {
+		return nil, fmt.Errorf("opening the db: %w", err)
+	}
+	if _, err := db.Exec(_ngramTableSQL); err != nil {
+		return nil, fmt.Errorf("creating schema: %w", err)
+	}
+	return db, nil
+}
+
+func generateNgrams(db *sql.DB) error {
 	var (
-		stat      ngramStat = ngramStat{ngrams: make(map[string]*ngramVariants)}
 		ngram     string
 		prevNgram string
 	)
-
+	stat, err := loadStat(db)
+	if err != nil {
+		return fmt.Errorf("loading existing stats: %w", err)
+	}
+	fmt.Printf("Loaded %d ngrams\n", len(stat.ngrams))
 	for i, fname := range flag.Args() {
 		fmt.Printf("Processing file %d/%d\r", i, len(flag.Args()))
 		f, err := os.Open(fname)
@@ -41,12 +91,17 @@ func main() {
 			if prevNgram != "" {
 				stat.add(prevNgram, ngram)
 			}
-
 			prevNgram = ngram
 		}
 	}
-	fmt.Printf("\nGot %d ngrams\n", len(stat.ngrams))
-	fmt.Println(generate(stat, *textLength))
-	//dumpNgrams(stat)
+	fmt.Printf("\nRead %d ngrams\n", len(stat.ngrams))
+	return stat.save(db)
+}
 
+func generateText(db *sql.DB, length int) (string, error) {
+	stat, err := loadStat(db)
+	if err != nil {
+		return "", fmt.Errorf("loading statistics: %w", err)
+	}
+	return stat.generate(length), nil
 }
